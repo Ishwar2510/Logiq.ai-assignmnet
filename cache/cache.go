@@ -2,68 +2,80 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"time"
 )
 
-type Cache struct{
+var (
+	ErrNotFound = errors.New("not found")
+	ErrAlreadyExists = errors.New("already exists")
+	ErrMaxLimitReached = errors.New("maximum cache limit reached")
+)
+
+type inMemCache struct{
 	maxSize int
 	cache map[string]cacheObject
 }
+
 type cacheObject struct{
 	value interface{}
 	expiration time.Time
 }
 
-type CacheMethods interface{
-	Add(key string, value interface{}, expiration time.Time) error
+type Cache interface{
+	Add(key string, value interface{}, expiration time.Duration) error
 	Get(key string) (interface{},error)
 	Delete(key string) error
+	MaxSize(size int)
 }
 
-func NewCache(maxSize int) *Cache{
-	return &Cache{
+func NewCache(maxSize int) Cache{
+	return &inMemCache{
 		maxSize: maxSize,
 		cache: make(map[string]cacheObject),
 	}
 }
 
-func (c *Cache) Add(key string, value interface{}, expiration time.Duration) error {
-	if (c.maxSize == len(c.cache)){
-			return fmt.Errorf("Max Size reached, please increase the capacity")
+func (c *inMemCache) Add(key string, value interface{}, expiration time.Duration) error {
+	if c.maxSize == len(c.cache) {
+			return ErrMaxLimitReached
 	}
-		_,err:= c.get(key)
-		if err==nil{
-			return errors.New("Already exists")
-		}
-	expTime := time.Now().Add(expiration)
-
-	c.cache[key] = cacheObject{value,expTime};
+	_,err:= c.get(key)
+	if err==nil{
+		return ErrAlreadyExists
+	}
+	c.cache[key] = cacheObject{
+		value:value,
+		expiration: time.Now().Add(expiration),
+	}
 	return nil
 }
-func (c* Cache) get(key string) (interface{},error){
+func (c *inMemCache) get(key string) (interface{},error){
 	obj, isPresent := c.cache[key]
-		if !isPresent{
-			return nil,errors.New("not found")
-		}
-		if obj.expiration.Before(time.Now()){
-			c.Delete( key)
-			return  nil,errors.New("not found")
-		}
+	if !isPresent{
+		return nil,ErrNotFound
+	}
+	if obj.expiration.Before(time.Now()){
+		delete(c.cache,key)
+		return  nil,ErrNotFound
+	}
 	return obj.value,nil
 }
 
 
-func (c *Cache)Get(key string)  (interface{},error){
+func (c *inMemCache)Get(key string)  (interface{},error){
 		return c.get(key)
 }
 
-func (c *Cache) Delete(key string) error{
-		_,err:=c.get(key)
-		if err!=nil{
-			return err
-		}
-		delete(c.cache,key)
+func (c *inMemCache) MaxSize(size int){
+	c.maxSize= size
+}
+
+func (c *inMemCache) Delete(key string) error{
+	_,err:=c.get(key)
+	if err!=nil{
+		return err
+	}
+	delete(c.cache,key)
 	return nil
 }
 
